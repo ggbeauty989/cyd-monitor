@@ -104,11 +104,10 @@ class LinuxAmdGpuSource:
     """GPU AMD (e alcune Intel) su Linux tramite sysfs amdgpu."""
 
     def __init__(self) -> None:
-        self.dev = None
-        for card in sorted(glob.glob("/sys/class/drm/card[0-9]/device")):
-            if os.path.exists(os.path.join(card, "gpu_busy_percent")):
-                self.dev = card
-                break
+        # Con più GPU (es. integrata del Ryzen + scheda dedicata) scegli quella con più VRAM
+        cards = [c for c in glob.glob("/sys/class/drm/card[0-9]/device")
+                 if os.path.exists(os.path.join(c, "gpu_busy_percent"))]
+        self.dev = max(cards, key=lambda c: self._read_num(f"{c}/mem_info_vram_total") or 0, default=None)
 
     @property
     def ok(self) -> bool:

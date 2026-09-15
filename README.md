@@ -27,6 +27,8 @@ Senza PC collegato il display mostra *NO CARRIER*.
 
 ## 2. Script PC (Windows / Linux)
 
+Su Linux segui prima la [configurazione aggiuntiva](#3-linux-configurazione-aggiuntiva).
+
 ```bash
 cd pc
 pip install -r requirements.txt
@@ -49,6 +51,8 @@ altrimenti la porta risulta occupata.
 | Temperatura CPU | `coretemp`/`k10temp` | **LibreHardwareMonitor** |
 | GPU NVIDIA | NVML | NVML |
 | GPU AMD | sysfs `amdgpu` | LibreHardwareMonitor |
+| GPU Intel | non supportata | LibreHardwareMonitor |
+| Nome GPU | solo NVIDIA | LibreHardwareMonitor / NVML |
 
 **Windows:** Windows non espone la temperatura della CPU. Scarica
 [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases),
@@ -58,9 +62,103 @@ server web integrato: in LHM attiva **Options → Remote Web Server → Run**
 (porta 8085). Se LHM viene avviato dopo lo script, viene trovato entro 10 s.
 Con più GPU viene scelta quella dedicata (NVIDIA > AMD > Intel, poi più VRAM).
 
-**Linux:** per la porta seriale aggiungi l'utente al gruppo `dialout`
-(`sudo usermod -aG dialout $USER`, poi rifai il login). Per le temperature
-può servire `lm-sensors`.
+## 3. Linux: configurazione aggiuntiva
+
+Comandi per Debian/Ubuntu/Mint; per Fedora usa `dnf`, per Arch `pacman`.
+
+### Python in un ambiente virtuale
+
+Le distribuzioni recenti bloccano `pip install` sul Python di sistema
+(errore `externally-managed-environment`). Usa un ambiente virtuale:
+
+```bash
+sudo apt install python3 python3-venv python3-pip
+cd cyd-monitor/pc
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+.venv/bin/python monitor.py
+```
+
+(`wmi` e `pywin32` sono solo per Windows e vengono saltati in automatico.)
+
+### Permessi della porta seriale
+
+Il CYD compare come `/dev/ttyUSB0`. Per usarlo senza `sudo` aggiungi il tuo
+utente al gruppo della porta, poi **esci e rientra** (o riavvia):
+
+```bash
+sudo usermod -aG dialout $USER     # Arch: gruppo "uucp" invece di "dialout"
+```
+
+### Il CYD non compare / sparisce dopo pochi secondi (Ubuntu)
+
+Il pacchetto `brltty` (display braille) su Ubuntu "ruba" i convertitori
+CH340 e la porta `/dev/ttyUSB0` scompare. Se non usi un display braille:
+
+```bash
+sudo apt remove brltty
+```
+
+Verifica con `ls /dev/ttyUSB*` dopo aver ricollegato la scheda.
+
+### Temperature CPU
+
+Lo script legge i sensori del kernel (`coretemp` per Intel, `k10temp` per AMD),
+di solito già attivi. Se la temperatura CPU resta `--`:
+
+```bash
+sudo apt install lm-sensors
+sudo sensors-detect --auto
+sensors            # deve mostrare "k10temp" o "coretemp"
+```
+
+### GPU
+
+- **AMD**: funziona subito con il driver open `amdgpu` del kernel, niente da
+  installare. Con più GPU (es. integrata del Ryzen + dedicata) viene scelta
+  quella con più VRAM. Il nome della scheda non viene mostrato (solo `GPU`).
+- **NVIDIA**: serve il **driver proprietario** NVIDIA (non `nouveau`), che
+  include la libreria NVML: `sudo ubuntu-drivers install`, poi verifica con
+  `nvidia-smi`.
+- **Intel**: non supportata su Linux.
+
+### Upload del firmware con PlatformIO
+
+Su Linux PlatformIO richiede le sue regole udev per accedere alla scheda:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/platformio/platformio-core/develop/platformio/assets/system/99-platformio-udev.rules | sudo tee /etc/udev/rules.d/99-platformio-udev.rules
+sudo udevadm control --reload-rules && sudo udevadm trigger
+```
+
+Poi ricollega la scheda. Serve anche il gruppo `dialout` (vedi sopra).
+
+### Avvio automatico (opzionale)
+
+Per far partire lo script da solo all'avvio, crea
+`~/.config/systemd/user/cyd-monitor.service` (adatta il percorso):
+
+```ini
+[Unit]
+Description=CYD Hardware Monitor
+
+[Service]
+ExecStart=%h/cyd-monitor/pc/.venv/bin/python %h/cyd-monitor/pc/monitor.py --no-ui
+StandardOutput=null
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+```
+
+```bash
+systemctl --user daemon-reload
+systemctl --user enable --now cyd-monitor
+loginctl enable-linger $USER    # parte anche senza fare login
+```
+
+Stato e log: `systemctl --user status cyd-monitor`.
 
 ## Protocollo
 
