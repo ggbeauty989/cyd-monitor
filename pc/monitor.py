@@ -39,6 +39,12 @@ from rich.live import Live
 from rich.panel import Panel
 from rich.table import Table
 
+# Avviato con pythonw.exe (senza finestra) non esiste un terminale: scarta l'output
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, "w")
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, "w")
+
 IS_WINDOWS = platform.system() == "Windows"
 IS_LINUX = platform.system() == "Linux"
 
