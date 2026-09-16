@@ -62,6 +62,33 @@ server web integrato: in LHM attiva **Options → Remote Web Server → Run**
 (porta 8085). Se LHM viene avviato dopo lo script, viene trovato entro 10 s.
 Con più GPU viene scelta quella dedicata (NVIDIA > AMD > Intel, poi più VRAM).
 
+### Windows: avvio automatico
+
+**1. LibreHardwareMonitor all'avvio** - nel menu **Options** di LHM spunta:
+`Start Minimized`, `Minimize To Tray`, `Run On Windows Startup`
+(LHM crea da solo un'attività che parte come amministratore) e verifica che
+**Remote Web Server → Run** resti attivo.
+
+**2. Lo script all'avvio** - da un terminale nella cartella `pc`:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File autostart_windows.ps1
+```
+
+Crea l'attività pianificata **"CYD Monitor"**: parte 20 s dopo il login,
+gira in background senza finestra (`pythonw.exe`), si riavvia se va in errore
+e ritrova da sola il CYD anche se lo colleghi dopo. Non servono permessi di
+amministratore.
+
+| Azione | Comando |
+|---|---|
+| Avviare subito | `Start-ScheduledTask -TaskName "CYD Monitor"` |
+| Fermare (es. per caricare il firmware) | `Stop-ScheduledTask -TaskName "CYD Monitor"` |
+| Rimuovere l'avvio automatico | `powershell -ExecutionPolicy Bypass -File autostart_windows.ps1 -Remove` |
+
+L'attività si vede anche in **Utilità di pianificazione**. Finché è attiva la
+porta COM è occupata: fermala prima di usare `monitor.py` a mano o l'Upload.
+
 ## 3. Linux: configurazione aggiuntiva
 
 Comandi per Debian/Ubuntu/Mint; per Fedora usa `dnf`, per Arch `pacman`.
