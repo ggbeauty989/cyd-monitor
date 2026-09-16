@@ -65,6 +65,36 @@ def short_gpu_name(name: str) -> str:
     return " ".join(name.split())[:16] or "iGPU"
 
 
+def short_cpu_name(name: str) -> str:
+    """'AMD Ryzen 7 9800X3D 8-Core Processor' -> 'Ryzen 7 9800X3D',
+    'Intel(R) Core(TM) i7-14700K' -> 'i7-14700K'."""
+    name = name.split("@")[0]  # Intel vecchi: "... CPU @ 3.60GHz"
+    name = re.sub(r"\b\d+-Core\b|with Radeon.*|Processor|CPU", "", name)
+    for junk in ("AMD", "Intel(R)", "Core(TM)", "(TM)", "(R)"):
+        name = name.replace(junk, "")
+    name = name.encode("ascii", "ignore").decode()
+    return " ".join(name.split())[:16]
+
+
+def system_cpu_name() -> str:
+    """Nome del processore dal sistema operativo (non serve LibreHardwareMonitor)."""
+    try:
+        if IS_WINDOWS:
+            import winreg
+
+            key = r"HARDWARE\DESCRIPTION\System\CentralProcessor\0"
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key) as k:
+                return winreg.QueryValueEx(k, "ProcessorNameString")[0]
+        if IS_LINUX:
+            with open("/proc/cpuinfo") as f:
+                for line in f:
+                    if line.startswith(("model name", "Model")):
+                        return line.split(":", 1)[1]
+    except Exception:
+        pass
+    return platform.processor()
+
+
 class NvidiaSource:
     """GPU NVIDIA tramite NVML (pacchetto nvidia-ml-py)."""
 
@@ -87,16 +117,13 @@ class NvidiaSource:
         nv, h = self.nv, self.handle
         out: dict = {}
         try:
-            name = nv.nvmlDeviceGetName(h)
-            out["gpu_name"] = short_gpu_name(name.decode() if isinstance(name, bytes) else name)
-        except Exception:
-            pass
-        try:
             out["gpu_t"] = float(nv.nvmlDeviceGetTemperature(h, nv.NVML_TEMPERATURE_GPU))
             out["gpu_u"] = float(nv.nvmlDeviceGetUtilizationRates(h).gpu)
             mem = nv.nvmlDeviceGetMemoryInfo(h)
             out["vram_used"] = mem.used / 1024**3
             out["vram_tot"] = mem.total / 1024**3
+            name = nv.nvmlDeviceGetName(h)  # il nome solo se i sensori rispondono
+            out["gpu_name"] = short_gpu_name(name.decode() if isinstance(name, bytes) else name)
         except Exception:
             pass
         try:
@@ -200,6 +227,7 @@ class LibreHardwareMonitorSource:
         except Exception:
             return []
         out: list[tuple] = []
+        names: dict[str, str] = {}
         # Albero: hardware -> gruppo ("Temperatures") -> sensore. Il nome
         # dell'hardware (es. "AMD Radeon RX 9070 XT") è quindi il "nonno".
         stack = [(root, "", "")]
@@ -209,16 +237,17 @@ class LibreHardwareMonitorSource:
                 sid = node["SensorId"]
                 val = self._num(node.get("RawValue") or node.get("Value"))
                 out.append((sid, node.get("Text", ""), node.get("Type", ""), val))
-                self.hw_names.setdefault("/".join(sid.split("/")[1:3]), grandparent)
+                names["/".join(sid.split("/")[1:3])] = grandparent
             for child in node.get("Children", []):
                 stack.append((child, node.get("Text", ""), parent))
+        self.hw_names = names
         return out
 
     def _sensors(self) -> list[tuple]:
         if self.mode == "WMI":
             try:
-                for hw in self.conn.Hardware():
-                    self.hw_names["/".join(hw.Identifier.split("/")[1:3])] = hw.Name
+                self.hw_names = {"/".join(hw.Identifier.split("/")[1:3]): hw.Name
+                                 for hw in self.conn.Hardware()}
                 return [(s.Identifier, s.Name, s.SensorType, s.Value) for s in self.conn.Sensor()]
             except Exception:
                 return []
@@ -232,6 +261,8 @@ class LibreHardwareMonitorSource:
             return out
 
         cpu = [s for s in sensors if "cpu" in s[0].split("/")[1]]
+        if cpu and self.hw_names.get("/".join(cpu[0][0].split("/")[1:3])):
+            out["cpu_name"] = short_cpu_name(self.hw_names["/".join(cpu[0][0].split("/")[1:3])])
 
         # --- CPU ---
         temps = {name: v for _, name, typ, v in cpu if typ == "Temperature"}
@@ -266,8 +297,6 @@ class LibreHardwareMonitorSource:
 
         gpu_key = min(groups, key=rank) if groups else None
         gpu = groups[gpu_key] if gpu_key else []
-        if gpu_key and self.hw_names.get(gpu_key):
-            out["gpu_name"] = short_gpu_name(self.hw_names[gpu_key])
 
         def pick(stype: str, *names: str) -> Optional[float]:
             vals = {n: v for _, n, t, v in gpu if t == stype}
@@ -290,6 +319,9 @@ class LibreHardwareMonitorSource:
             p = pick("Power", "GPU Package", "GPU Power", "GPU Core")
             if p is not None:
                 out["gpu_p"] = p
+            # il nome accompagna i dati: se non c'è nessuna lettura, niente nome
+            if any(k in out for k in ("gpu_t", "gpu_u", "vram_tot")) and self.hw_names.get(gpu_key):
+                out["gpu_name"] = short_gpu_name(self.hw_names[gpu_key])
         return out
 
 
@@ -299,6 +331,7 @@ class LibreHardwareMonitorSource:
 class Collector:
     def __init__(self) -> None:
         self.host = socket.gethostname()[:20]
+        self._cpu_name, self._cpu_name_time = "", -1e9
         self.lhm = LibreHardwareMonitorSource()
         self._lhm_retry = time.monotonic()
         self.nvidia = NvidiaSource()
@@ -376,6 +409,14 @@ class Collector:
         if self.nvidia.ok:
             data.update(self.nvidia.read())
 
+        # CPU: carico e frequenza sono sempre letti, quindi il nome c'è sempre.
+        # Se LHM non l'ha fornito, leggilo dal sistema (ricontrollato ogni 30 s).
+        if "cpu_name" not in data:
+            if now - self._cpu_name_time > 30:
+                self._cpu_name, self._cpu_name_time = short_cpu_name(system_cpu_name()), now
+            if self._cpu_name:
+                data["cpu_name"] = self._cpu_name
+
         return {k: round(v, 2) if isinstance(v, float) else v for k, v in data.items()}
 
 
@@ -429,7 +470,7 @@ def render(data: dict, status: str, sources: list[str]) -> Panel:
     t.add_column(style="bold cyan", justify="right")
     t.add_column()
     ct, gt = data.get("cpu_t"), data.get("gpu_t")
-    t.add_row("CPU", f"[{temp_color(ct)}]{fmt(ct, '°C', 1)}[/]   {fmt(data.get('cpu_u'), '%', 0)}   {fmt(data.get('cpu_f'), ' MHz')}")
+    t.add_row("CPU", f"[{temp_color(ct)}]{fmt(ct, '°C', 1)}[/]   {fmt(data.get('cpu_u'), '%', 0)}   {fmt(data.get('cpu_f'), ' MHz')}   [dim]{data.get('cpu_name', '')}[/]")
     t.add_row("GPU", f"[{temp_color(gt)}]{fmt(gt, '°C', 1)}[/]   {fmt(data.get('gpu_u'), '%', 0)}   {fmt(data.get('gpu_p'), ' W')}   [dim]{data.get('gpu_name', '')}[/]")
     t.add_row("RAM", f"{fmt(data.get('ram_used'), '', 1)} / {fmt(data.get('ram_tot'), ' GB', 1)}  ({fmt(data.get('ram_u'), '%')})")
     if "vram_tot" in data:

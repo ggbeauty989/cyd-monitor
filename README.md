@@ -52,7 +52,12 @@ altrimenti la porta risulta occupata.
 | GPU NVIDIA | NVML | NVML |
 | GPU AMD | sysfs `amdgpu` | LibreHardwareMonitor |
 | GPU Intel | non supportata | LibreHardwareMonitor |
+| Nome CPU | `/proc/cpuinfo` | LibreHardwareMonitor, altrimenti registro di Windows |
 | Nome GPU | solo NVIDIA | LibreHardwareMonitor / NVML |
+
+Il nome della GPU compare solo quando i suoi sensori vengono letti davvero
+(altrimenti l'intestazione mostra solo `GPU`). I nomi vengono riletti di continuo:
+se cambi scheda o processore il display si aggiorna da solo, senza riavviare nulla.
 
 **Windows:** Windows non espone la temperatura della CPU. Scarica
 [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases),
@@ -196,7 +201,7 @@ aggiornare i percorsi.
 Una riga JSON per aggiornamento; i campi mancanti vengono mostrati come `--`:
 
 ```json
-{"host":"PC","time":"16:09","cpu_t":54.0,"cpu_u":12.5,"cpu_f":4700,
+{"host":"PC","time":"16:09","cpu_name":"Ryzen 7 9800X3D","cpu_t":54.0,"cpu_u":12.5,"cpu_f":4700,
  "gpu_name":"RX 9070 XT","gpu_t":48,"gpu_u":7,"gpu_p":35.2,"vram_used":1.2,"vram_tot":12,
  "ram_u":39,"ram_used":24.2,"ram_tot":61.6,"net_up":2560,"net_dn":680,
  "up":273600,"procs":312}

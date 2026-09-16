@@ -427,6 +427,15 @@ static void update_mem(AsciiBar &bar, JsonDocument &doc, const char *kused, cons
   set_bar(bar, pct, buf);
 }
 
+// "CPU" + nome (max 16 caratteri) sulla pagina valori e su quella dei grafici
+static void set_titles(Section &values, Section &graph, const char *prefix, const char *name) {
+  char title[24];
+  if (name[0]) snprintf(title, sizeof(title), "%s %.16s", prefix, name);
+  else strlcpy(title, prefix, sizeof(title));
+  set_section(values, title);
+  set_section(graph, title);
+}
+
 static void apply_data(JsonDocument &doc) {
   char buf[64];
   float v;
@@ -440,12 +449,9 @@ static void apply_data(JsonDocument &doc) {
   push_history(h_cpu, doc, "cpu_t", "cpu_u");
   push_history(h_gpu, doc, "gpu_t", "gpu_u");
 
-  // Nome della GPU nelle intestazioni: --[GPU RX 9070 XT]----
-  char gpu_title[24];
-  snprintf(gpu_title, sizeof(gpu_title), "GPU %.16s", doc["gpu_name"] | "");
-  if (gpu_title[4] == '\0') gpu_title[3] = '\0';  // nessun nome: solo "GPU"
-  set_section(b_gpu.header, gpu_title);
-  set_section(h_gpu.header, gpu_title);
+  // Nomi nelle intestazioni: --[CPU Ryzen 7 9800X3D]--  --[GPU RX 9070 XT]--
+  set_titles(b_cpu.header, h_cpu.header, "CPU", doc["cpu_name"] | "");
+  set_titles(b_gpu.header, h_gpu.header, "GPU", doc["gpu_name"] | "");
 
   if (getf(doc, "cpu_f", v)) snprintf(buf, sizeof(buf), "%.2f", v / 1000.0f);
   else strcpy(buf, "--");
