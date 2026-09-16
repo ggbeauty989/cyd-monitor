@@ -162,30 +162,34 @@ Poi ricollega la scheda. Serve anche il gruppo `dialout` (vedi sopra).
 
 ### Avvio automatico (opzionale)
 
-Per far partire lo script da solo all'avvio, crea
-`~/.config/systemd/user/cyd-monitor.service` (adatta il percorso):
-
-```ini
-[Unit]
-Description=CYD Hardware Monitor
-
-[Service]
-ExecStart=%h/cyd-monitor/pc/.venv/bin/python %h/cyd-monitor/pc/monitor.py --no-ui
-StandardOutput=null
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=default.target
-```
+Dopo aver creato l'ambiente virtuale (vedi sopra), dalla cartella `pc`:
 
 ```bash
-systemctl --user daemon-reload
-systemctl --user enable --now cyd-monitor
-loginctl enable-linger $USER    # parte anche senza fare login
+chmod +x autostart_linux.sh     # solo se il file non è eseguibile
+./autostart_linux.sh
 ```
 
-Stato e log: `systemctl --user status cyd-monitor`.
+Crea e avvia il servizio systemd utente **`cyd-monitor`** con i percorsi
+corretti, ovunque si trovi il progetto. Il servizio:
+
+- parte all'accensione del PC, anche senza login (chiede la password di
+  `sudo` una sola volta per `loginctl enable-linger`)
+- usa il Python di `.venv` e gira in background
+- si riavvia se va in errore e ritrova da solo il CYD quando lo colleghi
+
+Prima di installare controlla che le librerie Python ci siano e avvisa se
+l'utente non è nel gruppo `dialout`.
+
+| Azione | Comando |
+|---|---|
+| Stato | `systemctl --user status cyd-monitor` |
+| Log in tempo reale | `journalctl --user -u cyd-monitor -f` |
+| Fermare (es. per caricare il firmware) | `systemctl --user stop cyd-monitor` |
+| Riavviare (es. dopo aver aggiornato lo script) | `systemctl --user restart cyd-monitor` |
+| Rimuovere l'avvio automatico | `./autostart_linux.sh --remove` |
+
+Se sposti la cartella del progetto, rilancia `./autostart_linux.sh` per
+aggiornare i percorsi.
 
 ## Protocollo
 
