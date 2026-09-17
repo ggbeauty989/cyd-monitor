@@ -14,6 +14,21 @@ UNIT_DIR="$HOME/.config/systemd/user"
 UNIT="$UNIT_DIR/$SERVICE.service"
 PC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Questo script è un installatore: va lanciato a mano dal proprio utente.
+# Con sudo, o come ExecStart di un servizio di sistema, "systemctl --user" non funziona.
+if [[ $EUID -eq 0 ]]; then
+    echo "Errore: non lanciare questo script con sudo o come root." >&2
+    echo "Eseguilo dal tuo utente: ./autostart_linux.sh" >&2
+    exit 1
+fi
+if ! systemctl --user show-environment >/dev/null 2>&1; then
+    echo "Errore: nessuna sessione systemd dell'utente (\"systemctl --user\" non risponde)." >&2
+    echo "Questo script è un installatore da lanciare a mano, una sola volta, da una normale" >&2
+    echo "sessione del tuo utente: non va usato in un servizio di sistema, in cron o con \"su\"." >&2
+    echo "Vedi README: 'Avvio automatico'." >&2
+    exit 1
+fi
+
 if [[ "${1:-}" == "--remove" ]]; then
     systemctl --user disable --now "$SERVICE" 2>/dev/null || true
     rm -f "$UNIT"

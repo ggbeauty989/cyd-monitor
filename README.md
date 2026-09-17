@@ -191,6 +191,16 @@ corretti, ovunque si trovi il progetto. Il servizio:
 Prima di installare controlla che le librerie Python ci siano e avvisa se
 l'utente non è nel gruppo `dialout`.
 
+> **Attenzione:** `autostart_linux.sh` è un **installatore da lanciare una sola
+> volta a mano**, dal tuo utente e **senza `sudo`**. Non è il programma da
+> tenere in esecuzione: non va messo in `ExecStart=` di un servizio creato a
+> mano in `/etc/systemd/system/`, né in cron o in `rc.local`. Il servizio lo
+> crea lui, in `~/.config/systemd/user/`, e lancia direttamente `monitor.py`.
+
+Tutti i comandi qui sotto vogliono **`--user`**: senza, `systemctl` e
+`journalctl` cercano un servizio di sistema che non esiste (o ne mostrano uno
+sbagliato con lo stesso nome).
+
 | Azione | Comando |
 |---|---|
 | Stato | `systemctl --user status cyd-monitor` |
@@ -201,6 +211,38 @@ l'utente non è nel gruppo `dialout`.
 
 Se sposti la cartella del progetto, rilancia `./autostart_linux.sh` per
 aggiornare i percorsi.
+
+Il log è quasi vuoto di proposito: l'output normale di `monitor.py` viene
+scartato (`StandardOutput=null`), nel journal finiscono solo gli errori.
+
+#### Errore `Failed to connect to user scope bus` / `status=1/FAILURE`
+
+Se `journalctl -u cyd-monitor` (senza `--user`) mostra:
+
+```
+systemctl[…]: Failed to connect to user scope bus via local transport:
+$DBUS_SESSION_BUS_ADDRESS and $XDG_RUNTIME_DIR not defined
+cyd-monitor.service: Main process exited, code=exited, status=1/FAILURE
+cyd-monitor.service: Start request repeated too quickly.
+```
+
+esiste un servizio **di sistema** che esegue `autostart_linux.sh` come
+`ExecStart`. Lì dentro `systemctl --user` non ha una sessione utente a cui
+collegarsi, quindi lo script esce con errore e systemd lo rilancia a vuoto.
+Rimuovi quel servizio e installa quello giusto:
+
+```bash
+sudo systemctl disable --now cyd-monitor.service
+sudo rm /etc/systemd/system/cyd-monitor.service
+sudo systemctl daemon-reload
+
+./autostart_linux.sh            # dal tuo utente, senza sudo
+systemctl --user status cyd-monitor
+```
+
+Le versioni recenti dello script se ne accorgono da sole: lanciato con `sudo`,
+da un servizio di sistema o da una sessione senza login dell'utente (es. `su`
+da root) si ferma subito con un messaggio che spiega cosa fare.
 
 ## Protocollo
 
