@@ -136,11 +136,48 @@ class NvidiaSource:
 class LinuxAmdGpuSource:
     """GPU AMD (e alcune Intel) su Linux tramite sysfs amdgpu."""
 
+    PCI_IDS = ("/usr/share/hwdata/pci.ids", "/usr/share/misc/pci.ids", "/usr/share/pci.ids")
+
     def __init__(self) -> None:
         # Con più GPU (es. integrata del Ryzen + scheda dedicata) scegli quella con più VRAM
         cards = [c for c in glob.glob("/sys/class/drm/card[0-9]/device")
                  if os.path.exists(os.path.join(c, "gpu_busy_percent"))]
         self.dev = max(cards, key=lambda c: self._read_num(f"{c}/mem_info_vram_total") or 0, default=None)
+        self.name = self._pci_name(self.dev) if self.dev else ""
+
+    @classmethod
+    def _pci_name(cls, dev: str) -> str:
+        """
+        amdgpu non espone il nome commerciale: lo cerca nel database pci.ids
+        tramite gli ID della scheda. Es. 1002:7550 -> "Navi 48 [Radeon RX 9070/9070 XT/9070 GRE]"
+        -> "RX 9070/9070 XT" (lo stesso chip può essere venduto con più nomi).
+        """
+        try:
+            with open(f"{dev}/vendor") as f:
+                vendor = f.read().strip().lower().removeprefix("0x")
+            with open(f"{dev}/device") as f:
+                device = f.read().strip().lower().removeprefix("0x")
+        except OSError:
+            return ""
+        for path in cls.PCI_IDS:
+            try:
+                f = open(path, encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            with f:
+                in_vendor = False
+                for line in f:
+                    if not line.strip() or line.startswith("#"):
+                        continue
+                    if not line.startswith("\t"):  # riga del produttore
+                        if in_vendor:
+                            break
+                        in_vendor = line[:4].lower() == vendor
+                    elif in_vendor and not line.startswith("\t\t") and line[1:5].lower() == device:
+                        name = line[5:].strip()
+                        m = re.search(r"\[(.+)\]", name)  # "Navi 48 [Radeon RX ...]" -> parte tra []
+                        return short_gpu_name(m.group(1) if m else name).rstrip("/ ")
+        return ""
 
     @property
     def ok(self) -> bool:
@@ -171,6 +208,8 @@ class LinuxAmdGpuSource:
             p = self._read_num(f"{hw}/power1_average") or self._read_num(f"{hw}/power1_input")
             if p is not None:
                 out["gpu_p"] = p / 1_000_000.0
+        if self.name and out:  # nome solo se la scheda ha risposto
+            out["gpu_name"] = self.name
         return out
 
 
@@ -185,7 +224,7 @@ class LibreHardwareMonitorSource:
     CPU_TEMP_NAMES = ("Core (Tctl/Tdie)", "CPU Package", "Core Average", "Core (Tctl)", "Tdie", "Tctl")
     GPU_VENDORS = ("gpu-nvidia", "nvidiagpu", "gpu-amd", "atigpu", "gpu-intel")
 
-    def __init__(self, url: str = "http://localhost:8085/data.json") -> None:
+    def __init__(self, url: str = "http://127.0.0.1:8085/data.json") -> None:
         self.url = url
         self.mode: Optional[str] = None
         self.conn = None
@@ -204,7 +243,7 @@ class LibreHardwareMonitorSource:
                         continue
             except ImportError:
                 pass
-        if self._http_sensors():
+        if IS_WINDOWS and self._http_sensors():  # LHM esiste solo per Windows
             self.mode = "web"
 
     @property
@@ -336,6 +375,7 @@ class Collector:
         self._lhm_retry = time.monotonic()
         self.nvidia = NvidiaSource()
         self.amd = LinuxAmdGpuSource() if IS_LINUX else None
+        self._amd_time = time.monotonic()
         self._net_last = psutil.net_io_counters()
         self._net_time = time.monotonic()
         psutil.cpu_percent(None)  # primo campione a vuoto
@@ -404,6 +444,8 @@ class Collector:
         # Ordine: le sorgenti successive sovrascrivono le precedenti
         if self.lhm.ok:
             data.update(self.lhm.read())
+        if IS_LINUX and now - self._amd_time > 30:  # schede aggiunte/cambiate
+            self.amd, self._amd_time = LinuxAmdGpuSource(), now
         if self.amd and self.amd.ok:
             data.update(self.amd.read())
         if self.nvidia.ok:

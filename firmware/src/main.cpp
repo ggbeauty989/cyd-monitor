@@ -7,9 +7,11 @@
  * Due pagine, si alternano toccando lo schermo (o col tasto BOOT):
  *   0) valori  -> numeri grandi, barre ASCII, RAM/VRAM, rete
  *   1) grafici -> storico 60 s di carico e temperatura CPU/GPU (lv_chart)
+ * Tenendo premuto per 2 s la schermata ruota di 180 gradi (scelta salvata in flash).
  */
 #include <Arduino.h>
 #include <ArduinoJson.h>
+#include <Preferences.h>
 #include <SPI.h>
 #include <TFT_eSPI.h>
 #include <XPT2046_Touchscreen.h>
@@ -27,6 +29,8 @@
 #define XPT2046_CLK  25
 #define XPT2046_CS   33
 #define BOOT_BUTTON  0
+#define LONG_PRESS_MS 2000       // pressione lunga -> ruota lo schermo
+#define RELEASE_DEBOUNCE_MS 80   // il touch può "sfarfallare" mentre è premuto
 
 #define F8  (&lv_font_unscii_8)   // 8x8 monospace -> 40 colonne
 #define F16 (&lv_font_unscii_16)
@@ -55,6 +59,9 @@ struct AsciiBar {
 
 static lv_obj_t *page_values, *page_graph;
 static int current_page = 0;
+static lv_display_t *disp;
+static Preferences prefs;
+static bool flipped = false;  // true = ruotato di 180 gradi
 static char host[16] = "cyd";
 
 static AsciiBar bar_ram, bar_vram;
@@ -230,7 +237,7 @@ static void boot_timer_cb(lv_timer_t *t) {
     snprintf(lines[5], sizeof(lines[5]), "gfx0: lvgl %d.%d.%d            [ OK ]",
              LVGL_VERSION_MAJOR, LVGL_VERSION_MINOR, LVGL_VERSION_PATCH);
     snprintf(lines[6], sizeof(lines[6]), "tty0: uart 115200 8N1      [ OK ]");
-    snprintf(lines[7], sizeof(lines[7]), "hint: tap screen = toggle graph");
+    snprintf(lines[7], sizeof(lines[7]), "hint: tap=graph  hold 2s=rotate");
     snprintf(lines[8], sizeof(lines[8]), "exec /bin/sysmon ...");
   }
   if (idx < 9) {
@@ -335,16 +342,41 @@ static void show_page(int page) {
   update_prompt();
 }
 
-// Tocco sullo schermo o tasto BOOT -> cambia pagina (sul fronte di pressione)
+// Orizzontale 320x240: 270 = orientamento standard, 90 = capovolto
+static void apply_rotation() {
+  lv_display_set_rotation(disp, flipped ? LV_DISPLAY_ROTATION_90 : LV_DISPLAY_ROTATION_270);
+  lv_obj_invalidate(lv_screen_active());
+}
+
+static void flip_screen() {
+  flipped = !flipped;
+  prefs.putBool("flip", flipped);
+  apply_rotation();
+}
+
+// Tocco o tasto BOOT:
+//   breve (al rilascio)           -> cambia pagina
+//   lungo (tenuto per 2 secondi)  -> ruota la schermata di 180 gradi
 static void poll_input() {
-  static bool was_pressed = false;
-  static uint32_t last_toggle = 0;
-  bool pressed = (touch.tirqTouched() && touch.touched()) || digitalRead(BOOT_BUTTON) == LOW;
-  if (pressed && !was_pressed && millis() - last_toggle > 300) {
-    show_page(!current_page);
-    last_toggle = millis();
+  static bool held = false, long_done = false;
+  static uint32_t press_start = 0, last_seen = 0;
+  uint32_t now = millis();
+  bool raw = (touch.tirqTouched() && touch.touched()) || digitalRead(BOOT_BUTTON) == LOW;
+
+  if (raw) {
+    last_seen = now;
+    if (!held) {
+      held = true;
+      long_done = false;
+      press_start = now;
+    } else if (!long_done && now - press_start >= LONG_PRESS_MS) {
+      long_done = true;
+      flip_screen();
+    }
+  } else if (held && now - last_seen > RELEASE_DEBOUNCE_MS) {
+    held = false;
+    if (!long_done) show_page(!current_page);
   }
-  was_pressed = pressed;
 }
 
 // ----------------------------- Aggiornamento dati --------------------------
@@ -530,8 +562,11 @@ void setup() {
   lv_init();
   lv_tick_set_cb([]() -> uint32_t { return millis(); });
 
-  lv_display_t *disp = lv_tft_espi_create(SCREEN_W, SCREEN_H, draw_buf, sizeof(draw_buf));
-  lv_display_set_rotation(disp, LV_DISPLAY_ROTATION_270);  // orizzontale 320x240
+  prefs.begin("cyd", false);
+  flipped = prefs.getBool("flip", false);
+
+  disp = lv_tft_espi_create(SCREEN_W, SCREEN_H, draw_buf, sizeof(draw_buf));
+  apply_rotation();
 
   pinMode(TFT_BL, OUTPUT);
   digitalWrite(TFT_BL, HIGH);

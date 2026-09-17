@@ -20,6 +20,10 @@ Il display ha due pagine, si passa dall'una all'altra **toccando lo schermo**
 - **grafici** (`./sysmon -g`): storico degli ultimi 60 s di carico (verde)
   e temperatura (ambra) di CPU e GPU
 
+**Tenendo premuto** lo schermo (o BOOT) per **2 secondi** la schermata ruota
+di 180°, utile se il CYD è montato capovolto. La scelta resta salvata anche
+dopo lo spegnimento; ripeti per tornare all'orientamento normale.
+
 Senza PC collegato il display mostra *NO CARRIER*.
 
 > Se i colori risultano invertiti o lo schermo resta bianco (esistono varianti
@@ -53,7 +57,7 @@ altrimenti la porta risulta occupata.
 | GPU AMD | sysfs `amdgpu` | LibreHardwareMonitor |
 | GPU Intel | non supportata | LibreHardwareMonitor |
 | Nome CPU | `/proc/cpuinfo` | LibreHardwareMonitor, altrimenti registro di Windows |
-| Nome GPU | solo NVIDIA | LibreHardwareMonitor / NVML |
+| Nome GPU | NVML / database `pci.ids` (AMD) | LibreHardwareMonitor / NVML |
 
 Il nome della GPU compare solo quando i suoi sensori vengono letti davvero
 (altrimenti l'intestazione mostra solo `GPU`). I nomi vengono riletti di continuo:
@@ -148,7 +152,9 @@ sensors            # deve mostrare "k10temp" o "coretemp"
 
 - **AMD**: funziona subito con il driver open `amdgpu` del kernel, niente da
   installare. Con più GPU (es. integrata del Ryzen + dedicata) viene scelta
-  quella con più VRAM. Il nome della scheda non viene mostrato (solo `GPU`).
+  quella con più VRAM. Il nome viene dal database `pci.ids` (pacchetto
+  `hwdata` o `pciutils`, quasi sempre già installato) e indica la famiglia del
+  chip: una RX 9070 XT appare come `RX 9070/9070 XT`.
 - **NVIDIA**: serve il **driver proprietario** NVIDIA (non `nouveau`), che
   include la libreria NVML: `sudo ubuntu-drivers install`, poi verifica con
   `nvidia-smi`.
