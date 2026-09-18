@@ -1,114 +1,116 @@
 # CYD Hardware Monitor
 
-Dashboard hardware del PC su **ESP32-2432S028** (Cheap Yellow Display, 2.8" 320×240).
+PC hardware dashboard on an **ESP32-2432S028** (Cheap Yellow Display, 2.8" 320×240).
 
 ```
-PC (monitor.py)  ──USB seriale, JSON 1/s──►  ESP32 (LVGL 9)
+PC (monitor.py)  ──USB serial, JSON 1/s──►  ESP32 (LVGL 9)
 ```
 
-## 1. Firmware ESP32 (PlatformIO)
+## 1. ESP32 firmware (PlatformIO)
 
-1. Installa [VS Code](https://code.visualstudio.com/) + estensione **PlatformIO IDE**.
-2. Apri la cartella `firmware/`, collega il CYD e premi **Upload** (→).
-   Le librerie (LVGL 9, TFT_eSPI, ArduinoJson, XPT2046_Touchscreen) vengono
-   scaricate da sole e i pin di display e touch sono già configurati.
+1. Install [VS Code](https://code.visualstudio.com/) + the **PlatformIO IDE** extension.
+2. Open the `firmware/` folder, plug in the CYD and press **Upload** (→).
+   The libraries (LVGL 9, TFT_eSPI, ArduinoJson, XPT2046_Touchscreen) are
+   downloaded automatically and the display and touch pins are already configured.
 
-Il display ha tre pagine, si scorrono in sequenza **toccando lo schermo**
-(o premendo il tasto **BOOT**):
+The display has three pages, cycled in order by **touching the screen**
+(or pressing the **BOOT** button):
 
-- **valori**: temperature, carico, frequenza, potenza, RAM/VRAM, rete
-- **grafici** (`./sysmon -g`): storico degli ultimi 60 s di carico (verde)
-  e temperatura (ambra) di CPU e GPU
-- **top** (`./sysmon -t`): i 13 processi che consumano più CPU, stile `htop`
-  (PID, CPU%, MEM%, nome). La CPU% è riferita all'intero sistema, come in
-  Task Manager, quindi la somma corrisponde al carico della pagina valori.
+- **values**: temperatures, load, frequency, power, RAM/VRAM, network
+- **charts** (`./sysmon -g`): 60 s history of load (green)
+  and temperature (amber) for CPU and GPU
+- **top** (`./sysmon -t`): the 13 processes using the most CPU, `htop` style
+  (PID, CPU%, MEM%, name). CPU% is relative to the whole system, as in
+  Task Manager, so the sum matches the load shown on the values page.
 
-**Tenendo premuto** lo schermo (o BOOT) per **2 secondi** la schermata ruota
-di 180°, utile se il CYD è montato capovolto. La scelta resta salvata anche
-dopo lo spegnimento; ripeti per tornare all'orientamento normale.
+**Pressing and holding** the screen (or BOOT) for **2 seconds** rotates the
+display by 180°, useful if the CYD is mounted upside down. The choice is kept
+after power off; repeat to go back to the normal orientation.
 
-Senza PC collegato il display mostra *NO CARRIER*.
+Without a PC connected, the display shows *NO CARRIER*.
 
-> Se i colori risultano invertiti o lo schermo resta bianco (esistono varianti
-> del CYD), in `platformio.ini` sostituisci `ILI9341_2_DRIVER` con `ST7789_DRIVER`.
+> If the colors look inverted or the screen stays blank (there are CYD
+> variants), replace `ILI9341_2_DRIVER` with `ST7789_DRIVER` in `platformio.ini`.
 
-## 2. Script PC (Windows / Linux)
+## 2. PC script (Windows / Linux)
 
-Su Linux segui prima la [configurazione aggiuntiva](#3-linux-configurazione-aggiuntiva).
+On Linux, follow the [additional setup](#3-linux-additional-setup) first.
 
 ```bash
 cd pc
 pip install -r requirements.txt
-python monitor.py              # porta rilevata in automatico (CH340/CP210x)
-python monitor.py --port COM5  # oppure /dev/ttyUSB0
-python monitor.py --dry-run    # prova senza ESP32
+python monitor.py              # port detected automatically (CH340/CP210x)
+python monitor.py --port COM5  # or /dev/ttyUSB0
+python monitor.py --dry-run    # test without the ESP32
 ```
 
-Opzioni: `--interval 0.5`, `--baud`, `--no-ui` (output JSON), `--once`.
+Options: `--interval 0.5`, `--baud`, `--no-ui` (JSON output), `--once`.
 
-**Chiudi il Serial Monitor di PlatformIO/Arduino** prima di avviare lo script,
-altrimenti la porta risulta occupata.
+**Close the PlatformIO/Arduino Serial Monitor** before starting the script,
+otherwise the port will be busy.
 
-### Sensori per sistema operativo
+### Sensors by operating system
 
-| Dato | Linux | Windows |
+| Data | Linux | Windows |
 |---|---|---|
-| CPU %, RAM, rete | psutil | psutil |
-| Frequenza CPU | psutil (reale) | LibreHardwareMonitor (psutil dà un valore fisso) |
-| Temperatura CPU | `coretemp`/`k10temp` | **LibreHardwareMonitor** |
-| GPU NVIDIA | NVML | NVML |
-| GPU AMD | sysfs `amdgpu` | LibreHardwareMonitor |
-| GPU Intel | non supportata | LibreHardwareMonitor |
-| Nome CPU | `/proc/cpuinfo` | LibreHardwareMonitor, altrimenti registro di Windows |
-| Nome GPU | NVML / database `pci.ids` (AMD) | LibreHardwareMonitor / NVML |
+| CPU %, RAM, network | psutil | psutil |
+| CPU frequency | psutil (real) | LibreHardwareMonitor (psutil gives a fixed value) |
+| CPU temperature | `coretemp`/`k10temp` | **LibreHardwareMonitor** |
+| NVIDIA GPU | NVML | NVML |
+| AMD GPU | sysfs `amdgpu` | LibreHardwareMonitor |
+| Intel GPU | not supported | LibreHardwareMonitor |
+| CPU name | `/proc/cpuinfo` | LibreHardwareMonitor, otherwise the Windows registry |
+| GPU name | NVML / `pci.ids` database (AMD) | LibreHardwareMonitor / NVML |
 
-Il nome della GPU compare solo quando i suoi sensori vengono letti davvero
-(altrimenti l'intestazione mostra solo `GPU`). I nomi vengono riletti di continuo:
-se cambi scheda o processore il display si aggiorna da solo, senza riavviare nulla.
+The GPU name is shown only when its sensors are actually being read
+(otherwise the header shows just `GPU`). The names are re-read continuously:
+if you change your GPU or CPU the display updates on its own, without
+restarting anything.
 
-**Windows:** Windows non espone la temperatura della CPU. Scarica
+**Windows:** Windows does not expose the CPU temperature. Download
 [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases),
-avvialo **come amministratore** e lascialo aperto (anche ridotto a icona).
-Lo script ne legge i sensori via WMI oppure, nelle versioni recenti, dal
-server web integrato: in LHM attiva **Options → Remote Web Server → Run**
-(porta 8085). Se LHM viene avviato dopo lo script, viene trovato entro 10 s.
-Con più GPU viene scelta quella dedicata (NVIDIA > AMD > Intel, poi più VRAM).
+run it **as administrator** and leave it open (even minimized to the tray).
+The script reads its sensors via WMI or, on recent versions, from the
+built-in web server: in LHM enable **Options → Remote Web Server → Run**
+(port 8085). If LHM is started after the script, it is found within 10 s.
+With multiple GPUs the dedicated one is picked (NVIDIA > AMD > Intel, then
+most VRAM).
 
-### Windows: avvio automatico
+### Windows: autostart
 
-**1. LibreHardwareMonitor all'avvio** - nel menu **Options** di LHM spunta:
+**1. LibreHardwareMonitor at startup** - in the LHM **Options** menu check:
 `Start Minimized`, `Minimize To Tray`, `Run On Windows Startup`
-(LHM crea da solo un'attività che parte come amministratore) e verifica che
-**Remote Web Server → Run** resti attivo.
+(LHM creates the task itself, which runs as administrator) and make sure
+**Remote Web Server → Run** stays active.
 
-**2. Lo script all'avvio** - da un terminale nella cartella `pc`:
+**2. The script at startup** - from a terminal in the `pc` folder:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File autostart_windows.ps1
 ```
 
-Crea l'attività pianificata **"CYD Monitor"**: parte 20 s dopo il login,
-gira in background senza finestra (`pythonw.exe`), si riavvia se va in errore
-e ritrova da sola il CYD anche se lo colleghi dopo. Non servono permessi di
-amministratore.
+This creates the scheduled task **"CYD Monitor"**: it starts 20 s after
+login, runs in the background without a window (`pythonw.exe`), restarts if
+it errors and re-finds the CYD on its own even if you plug it in later.
+No administrator privileges are needed.
 
-| Azione | Comando |
+| Action | Command |
 |---|---|
-| Avviare subito | `Start-ScheduledTask -TaskName "CYD Monitor"` |
-| Fermare (es. per caricare il firmware) | `Stop-ScheduledTask -TaskName "CYD Monitor"` |
-| Rimuovere l'avvio automatico | `powershell -ExecutionPolicy Bypass -File autostart_windows.ps1 -Remove` |
+| Start now | `Start-ScheduledTask -TaskName "CYD Monitor"` |
+| Stop (e.g. to upload the firmware) | `Stop-ScheduledTask -TaskName "CYD Monitor"` |
+| Remove autostart | `powershell -ExecutionPolicy Bypass -File autostart_windows.ps1 -Remove` |
 
-L'attività si vede anche in **Utilità di pianificazione**. Finché è attiva la
-porta COM è occupata: fermala prima di usare `monitor.py` a mano o l'Upload.
+The task is also visible in **Task Scheduler**. While it is active the COM
+port is held: stop it before using `monitor.py` manually or uploading.
 
-## 3. Linux: configurazione aggiuntiva
+## 3. Linux: additional setup
 
-Comandi per Debian/Ubuntu/Mint; per Fedora usa `dnf`, per Arch `pacman`.
+Commands for Debian/Ubuntu/Mint; use `dnf` on Fedora, `pacman` on Arch.
 
-### Python in un ambiente virtuale
+### Python in a virtual environment
 
-Le distribuzioni recenti bloccano `pip install` sul Python di sistema
-(errore `externally-managed-environment`). Usa un ambiente virtuale:
+Recent distributions block `pip install` on the system Python
+(error `externally-managed-environment`). Use a virtual environment:
 
 ```bash
 sudo apt install python3 python3-venv python3-pip
@@ -118,109 +120,110 @@ python3 -m venv .venv
 .venv/bin/python monitor.py
 ```
 
-(`wmi` e `pywin32` sono solo per Windows e vengono saltati in automatico.)
+(`wmi` and `pywin32` are Windows-only and are skipped automatically.)
 
-### Permessi della porta seriale
+### Serial port permissions
 
-Il CYD compare come `/dev/ttyUSB0`. Per usarlo senza `sudo` aggiungi il tuo
-utente al gruppo della porta, poi **esci e rientra** (o riavvia):
+The CYD shows up as `/dev/ttyUSB0`. To use it without `sudo`, add your
+user to the port's group, then **log out and back in** (or reboot):
 
 ```bash
-sudo usermod -aG dialout $USER     # Arch: gruppo "uucp" invece di "dialout"
+sudo usermod -aG dialout $USER     # Arch: "uucp" group instead of "dialout"
 ```
 
-### Il CYD non compare / sparisce dopo pochi secondi (Ubuntu)
+### The CYD does not appear / disappears after a few seconds (Ubuntu)
 
-Il pacchetto `brltty` (display braille) su Ubuntu "ruba" i convertitori
-CH340 e la porta `/dev/ttyUSB0` scompare. Se non usi un display braille:
+The `brltty` package (braille display) on Ubuntu "steals" the CH340
+converters and the `/dev/ttyUSB0` port disappears. If you do not use a
+braille display:
 
 ```bash
 sudo apt remove brltty
 ```
 
-Verifica con `ls /dev/ttyUSB*` dopo aver ricollegato la scheda.
+Verify with `ls /dev/ttyUSB*` after re-plugging the board.
 
-### Temperature CPU
+### CPU temperatures
 
-Lo script legge i sensori del kernel (`coretemp` per Intel, `k10temp` per AMD),
-di solito già attivi. Se la temperatura CPU resta `--`:
+The script reads the kernel sensors (`coretemp` for Intel, `k10temp` for AMD),
+usually already enabled. If the CPU temperature stays `--`:
 
 ```bash
 sudo apt install lm-sensors
 sudo sensors-detect --auto
-sensors            # deve mostrare "k10temp" o "coretemp"
+sensors            # must show "k10temp" or "coretemp"
 ```
 
 ### GPU
 
-- **AMD**: funziona subito con il driver open `amdgpu` del kernel, niente da
-  installare. Con più GPU (es. integrata del Ryzen + dedicata) viene scelta
-  quella con più VRAM. Il nome viene dal database `pci.ids` (pacchetto
-  `hwdata` o `pciutils`, quasi sempre già installato) e indica la famiglia del
-  chip: una RX 9070 XT appare come `RX 9070/9070 XT`.
-- **NVIDIA**: serve il **driver proprietario** NVIDIA (non `nouveau`), che
-  include la libreria NVML: `sudo ubuntu-drivers install`, poi verifica con
-  `nvidia-smi`.
-- **Intel**: non supportata su Linux.
+- **AMD**: works out of the box with the kernel's open `amdgpu` driver,
+  nothing to install. With multiple GPUs (e.g. Ryzen iGPU + dedicated) the
+  one with the most VRAM is picked. The name comes from the `pci.ids`
+  database (`hwdata` or `pciutils` package, almost always already installed)
+  and indicates the chip family: an RX 9070 XT shows up as `RX 9070/9070 XT`.
+- **NVIDIA**: requires the **proprietary** NVIDIA driver (not `nouveau`),
+  which includes the NVML library: `sudo ubuntu-drivers install`, then check
+  with `nvidia-smi`.
+- **Intel**: not supported on Linux.
 
-### Upload del firmware con PlatformIO
+### Uploading the firmware with PlatformIO
 
-Su Linux PlatformIO richiede le sue regole udev per accedere alla scheda:
+On Linux PlatformIO needs its udev rules to access the board:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/platformio/platformio-core/develop/platformio/assets/system/99-platformio-udev.rules | sudo tee /etc/udev/rules.d/99-platformio-udev.rules
 sudo udevadm control --reload-rules && sudo udevadm trigger
 ```
 
-Poi ricollega la scheda. Serve anche il gruppo `dialout` (vedi sopra).
+Then re-plug the board. The `dialout` group is also required (see above).
 
-### Avvio automatico (opzionale)
+### Autostart (optional)
 
-Dopo aver creato l'ambiente virtuale (vedi sopra), dalla cartella `pc`:
+After creating the virtual environment (see above), from the `pc` folder:
 
 ```bash
-chmod +x autostart_linux.sh     # solo se il file non è eseguibile
+chmod +x autostart_linux.sh     # only if the file is not executable
 ./autostart_linux.sh
 ```
 
-Crea e avvia il servizio systemd utente **`cyd-monitor`** con i percorsi
-corretti, ovunque si trovi il progetto. Il servizio:
+This creates and starts the systemd user service **`cyd-monitor`** with the
+correct paths, wherever the project is located. The service:
 
-- parte all'accensione del PC, anche senza login (chiede la password di
-  `sudo` una sola volta per `loginctl enable-linger`)
-- usa il Python di `.venv` e gira in background
-- si riavvia se va in errore e ritrova da solo il CYD quando lo colleghi
+- starts at PC boot, even without a login (asks for the `sudo` password
+  once, for `loginctl enable-linger`)
+- uses the `.venv` Python and runs in the background
+- restarts if it errors and re-finds the CYD on its own when you plug it in
 
-Prima di installare controlla che le librerie Python ci siano e avvisa se
-l'utente non è nel gruppo `dialout`.
+Before installing it checks that the Python libraries are present and warns
+if the user is not in the `dialout` group.
 
-> **Attenzione:** `autostart_linux.sh` è un **installatore da lanciare una sola
-> volta a mano**, dal tuo utente e **senza `sudo`**. Non è il programma da
-> tenere in esecuzione: non va messo in `ExecStart=` di un servizio creato a
-> mano in `/etc/systemd/system/`, né in cron o in `rc.local`. Il servizio lo
-> crea lui, in `~/.config/systemd/user/`, e lancia direttamente `monitor.py`.
+> **Note:** `autostart_linux.sh` is a **one-shot installer to be run manually
+> once**, from your user, **without `sudo`**. It is not the program to keep
+> running: do not put it in the `ExecStart=` of a hand-made service in
+> `/etc/systemd/system/`, nor in cron or `rc.local`. It creates the service
+> itself, in `~/.config/systemd/user/`, and it launches `monitor.py` directly.
 
-Tutti i comandi qui sotto vogliono **`--user`**: senza, `systemctl` e
-`journalctl` cercano un servizio di sistema che non esiste (o ne mostrano uno
-sbagliato con lo stesso nome).
+All the commands below require **`--user`**: without it, `systemctl` and
+`journalctl` look for a system service that does not exist (or show a wrong
+one with the same name).
 
-| Azione | Comando |
+| Action | Command |
 |---|---|
-| Stato | `systemctl --user status cyd-monitor` |
-| Log in tempo reale | `journalctl --user -u cyd-monitor -f` |
-| Fermare (es. per caricare il firmware) | `systemctl --user stop cyd-monitor` |
-| Riavviare (es. dopo aver aggiornato lo script) | `systemctl --user restart cyd-monitor` |
-| Rimuovere l'avvio automatico | `./autostart_linux.sh --remove` |
+| Status | `systemctl --user status cyd-monitor` |
+| Live logs | `journalctl --user -u cyd-monitor -f` |
+| Stop (e.g. to upload the firmware) | `systemctl --user stop cyd-monitor` |
+| Restart (e.g. after updating the script) | `systemctl --user restart cyd-monitor` |
+| Remove autostart | `./autostart_linux.sh --remove` |
 
-Se sposti la cartella del progetto, rilancia `./autostart_linux.sh` per
-aggiornare i percorsi.
+If you move the project folder, run `./autostart_linux.sh` again to update
+the paths.
 
-Il log è quasi vuoto di proposito: l'output normale di `monitor.py` viene
-scartato (`StandardOutput=null`), nel journal finiscono solo gli errori.
+The log is almost empty on purpose: the normal output of `monitor.py` is
+discarded (`StandardOutput=null`), only errors end up in the journal.
 
-#### Errore `Failed to connect to user scope bus` / `status=1/FAILURE`
+#### `Failed to connect to user scope bus` / `status=1/FAILURE` error
 
-Se `journalctl -u cyd-monitor` (senza `--user`) mostra:
+If `journalctl -u cyd-monitor` (without `--user`) shows:
 
 ```
 systemctl[…]: Failed to connect to user scope bus via local transport:
@@ -229,27 +232,27 @@ cyd-monitor.service: Main process exited, code=exited, status=1/FAILURE
 cyd-monitor.service: Start request repeated too quickly.
 ```
 
-esiste un servizio **di sistema** che esegue `autostart_linux.sh` come
-`ExecStart`. Lì dentro `systemctl --user` non ha una sessione utente a cui
-collegarsi, quindi lo script esce con errore e systemd lo rilancia a vuoto.
-Rimuovi quel servizio e installa quello giusto:
+there is a **system** service running `autostart_linux.sh` as `ExecStart`.
+In that context `systemctl --user` has no user session to connect to, so the
+script exits with an error and systemd keeps restarting it for nothing.
+Remove that service and install the right one:
 
 ```bash
 sudo systemctl disable --now cyd-monitor.service
 sudo rm /etc/systemd/system/cyd-monitor.service
 sudo systemctl daemon-reload
 
-./autostart_linux.sh            # dal tuo utente, senza sudo
+./autostart_linux.sh            # from your user, without sudo
 systemctl --user status cyd-monitor
 ```
 
-Le versioni recenti dello script se ne accorgono da sole: lanciato con `sudo`,
-da un servizio di sistema o da una sessione senza login dell'utente (es. `su`
-da root) si ferma subito con un messaggio che spiega cosa fare.
+Recent versions of the script detect this on their own: when run with
+`sudo`, from a system service or from a session without a user login (e.g.
+`su` from root) it stops immediately with a message explaining what to do.
 
-## Protocollo
+## Protocol
 
-Una riga JSON per aggiornamento; i campi mancanti vengono mostrati come `--`:
+One JSON line per update; missing fields are shown as `--`:
 
 ```json
 {"host":"PC","time":"16:09","cpu_name":"Ryzen 7 9800X3D","cpu_t":54.0,"cpu_u":12.5,"cpu_f":4700,
