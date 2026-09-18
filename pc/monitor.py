@@ -51,7 +51,7 @@ IS_LINUX = platform.system() == "Linux"
 # VID dei convertitori USB-seriale tipici delle schede ESP32
 ESP_USB_VIDS = {0x1A86: "CH340", 0x10C4: "CP210x", 0x303A: "Espressif", 0x0403: "FTDI"}
 
-TOP_PROCS = 14  # righe della pagina "top" sul display (quante ne entrano a 8 px)
+TOP_PROCS = 13  # righe della pagina "top" sul display (quante ne entrano a 8 px)
 
 console = Console()
 

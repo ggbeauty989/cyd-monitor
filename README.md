@@ -19,7 +19,7 @@ Il display ha tre pagine, si scorrono in sequenza **toccando lo schermo**
 - **valori**: temperature, carico, frequenza, potenza, RAM/VRAM, rete
 - **grafici** (`./sysmon -g`): storico degli ultimi 60 s di carico (verde)
   e temperatura (ambra) di CPU e GPU
-- **top** (`./sysmon -t`): i 14 processi che consumano più CPU, stile `htop`
+- **top** (`./sysmon -t`): i 13 processi che consumano più CPU, stile `htop`
   (PID, CPU%, MEM%, nome). La CPU% è riferita all'intero sistema, come in
   Task Manager, quindi la somma corrisponde al carico della pagina valori.
 

@@ -37,7 +37,7 @@
 #define F16 (&lv_font_unscii_16)
 #define CW 8                      // larghezza carattere F8
 #define LINE_CHARS 40
-#define TOP_ROWS 14               // righe di processi nella pagina "top"
+#define TOP_ROWS 13               // righe di processi nella pagina "top" (14 toccano la riga ==== in basso)
 #define TOP_ROW_H 12              // passo verticale (8 px di font + 4 di aria)
 
 static uint8_t draw_buf[SCREEN_W * SCREEN_H / 10 * (LV_COLOR_DEPTH / 8)];
