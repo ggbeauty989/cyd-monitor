@@ -2,11 +2,11 @@
 """
 CYD Hardware Monitor - lato PC (Windows / Linux)
 
-Raccoglie i dati di sistema (CPU, GPU, RAM, rete) e li invia via seriale
-a un ESP32-2432S028 ("Cheap Yellow Display") come righe JSON.
+Raccoglie i dati di sistema (CPU, GPU, RAM, rete, processi) e li invia via
+seriale a un ESP32-2432S028 ("Cheap Yellow Display") come righe JSON.
 
 Sorgenti dati:
-  - psutil                  -> CPU %, frequenza, RAM, rete (tutti gli OS)
+  - psutil                  -> CPU %, frequenza, RAM, rete, top processi (tutti gli OS)
   - Linux sysfs / psutil    -> temperatura CPU, GPU AMD
   - NVIDIA NVML (pynvml)    -> GPU NVIDIA (Windows e Linux)
   - LibreHardwareMonitor    -> temperature CPU/GPU su Windows (WMI o server web :8085)
@@ -50,6 +50,8 @@ IS_LINUX = platform.system() == "Linux"
 
 # VID dei convertitori USB-seriale tipici delle schede ESP32
 ESP_USB_VIDS = {0x1A86: "CH340", 0x10C4: "CP210x", 0x303A: "Espressif", 0x0403: "FTDI"}
+
+TOP_PROCS = 14  # righe della pagina "top" sul display (quante ne entrano a 8 px)
 
 console = Console()
 
@@ -379,6 +381,7 @@ class Collector:
         self._net_last = psutil.net_io_counters()
         self._net_time = time.monotonic()
         psutil.cpu_percent(None)  # primo campione a vuoto
+        self._ncpu = psutil.cpu_count() or 1
 
     def sources(self) -> list[str]:
         s = ["psutil"]
@@ -406,6 +409,23 @@ class Collector:
             return max(e.current for e in entries)
         return None
 
+    def _top(self, n: int = TOP_PROCS) -> list[list]:
+        """
+        Processi più impegnativi, stile htop: [[pid, cpu%, mem%, nome], ...].
+        La CPU% è riferita all'intero sistema (come Task Manager), così la somma
+        torna con il carico globale. psutil tiene in cache i Process, quindi il
+        primo giro restituisce 0 e dal secondo i valori sono reali.
+        """
+        procs = []
+        for p in psutil.process_iter(["pid", "name", "cpu_percent", "memory_percent"]):
+            i = p.info
+            if i["cpu_percent"] is None or i["memory_percent"] is None:
+                continue
+            name = (i["name"] or "?").removesuffix(".exe").encode("ascii", "ignore").decode()
+            procs.append([i["pid"], i["cpu_percent"] / self._ncpu, i["memory_percent"], name[:20] or "?"])
+        procs.sort(key=lambda r: (-r[1], -r[2]))
+        return [[pid, round(c, 1), round(m, 1), nm] for pid, c, m, nm in procs[:n]]
+
     def collect(self) -> dict:
         data: dict = {
             "host": self.host,
@@ -430,6 +450,8 @@ class Collector:
         data["net_up"] = (net.bytes_sent - self._net_last.bytes_sent) / dt
         data["net_dn"] = (net.bytes_recv - self._net_last.bytes_recv) / dt
         self._net_last, self._net_time = net, now
+
+        data["top"] = self._top()
 
         if IS_LINUX:
             t = self._linux_cpu_temp()

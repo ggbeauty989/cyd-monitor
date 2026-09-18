@@ -4,9 +4,10 @@
  * Riceve righe JSON via seriale (115200) dallo script monitor.py
  * e mostra una dashboard testuale stile terminale (LVGL 9 + font unscii).
  *
- * Due pagine, si alternano toccando lo schermo (o col tasto BOOT):
+ * Tre pagine, si scorrono toccando lo schermo (o col tasto BOOT):
  *   0) valori  -> numeri grandi, barre ASCII, RAM/VRAM, rete
  *   1) grafici -> storico 60 s di carico e temperatura CPU/GPU (lv_chart)
+ *   2) top     -> processi più impegnativi, stile htop (PID CPU% MEM% nome)
  * Tenendo premuto per 2 s la schermata ruota di 180 gradi (scelta salvata in flash).
  */
 #include <Arduino.h>
@@ -36,6 +37,8 @@
 #define F16 (&lv_font_unscii_16)
 #define CW 8                      // larghezza carattere F8
 #define LINE_CHARS 40
+#define TOP_ROWS 14               // righe di processi nella pagina "top"
+#define TOP_ROW_H 12              // passo verticale (8 px di font + 4 di aria)
 
 static uint8_t draw_buf[SCREEN_W * SCREEN_H / 10 * (LV_COLOR_DEPTH / 8)];
 static SPIClass touch_spi(VSPI);
@@ -57,7 +60,9 @@ struct AsciiBar {
   int x, cells;
 };
 
-static lv_obj_t *page_values, *page_graph;
+#define PAGE_COUNT 3
+static lv_obj_t *pages[PAGE_COUNT];  // 0 valori, 1 grafici, 2 top
+static lv_obj_t *lbl_top;            // unica label multilinea con i processi
 static int current_page = 0;
 static lv_display_t *disp;
 static Preferences prefs;
@@ -237,7 +242,7 @@ static void boot_timer_cb(lv_timer_t *t) {
     snprintf(lines[5], sizeof(lines[5]), "gfx0: lvgl %d.%d.%d            [ OK ]",
              LVGL_VERSION_MAJOR, LVGL_VERSION_MINOR, LVGL_VERSION_PATCH);
     snprintf(lines[6], sizeof(lines[6]), "tty0: uart 115200 8N1      [ OK ]");
-    snprintf(lines[7], sizeof(lines[7]), "hint: tap=graph  hold 2s=rotate");
+    snprintf(lines[7], sizeof(lines[7]), "hint: tap=page  hold 2s=rotate");
     snprintf(lines[8], sizeof(lines[8]), "exec /bin/sysmon ...");
   }
   if (idx < 9) {
@@ -275,7 +280,7 @@ static void build_ui() {
   lv_obj_align(lbl_link, LV_ALIGN_TOP_RIGHT, 0, 222);
 
   // --- Pagina 0: valori ---
-  page_values = make_page(scr);
+  lv_obj_t *page_values = pages[0] = make_page(scr);
   b_cpu = make_block(page_values, 22, "CPU", "freq/GHz");
   b_gpu = make_block(page_values, 76, "GPU", "power/W");
 
@@ -292,10 +297,18 @@ static void build_ui() {
   lbl_tx = txt(page_values, 160, 187, F16, COL_CYAN, "--");
 
   // --- Pagina 1: grafici storici ---
-  page_graph = make_page(scr);
+  lv_obj_t *page_graph = pages[1] = make_page(scr);
   h_cpu = make_history(page_graph, 22, "CPU");
   h_gpu = make_history(page_graph, 116, "GPU");
   lv_obj_add_flag(page_graph, LV_OBJ_FLAG_HIDDEN);
+
+  // --- Pagina 2: top processi (una sola label multilinea: 14 righe da 40 col) ---
+  lv_obj_t *page_top = pages[2] = make_page(scr);
+  section(page_top, 22, "TOP");
+  txt(page_top, 0, 33, F8, COL_DIM, "  PID  CPU%  MEM%  COMMAND");
+  lbl_top = txt(page_top, 0, 44, F8, COL_TEXT, "n/a");
+  lv_obj_set_style_text_line_space(lbl_top, TOP_ROW_H - 8, 0);
+  lv_obj_add_flag(page_top, LV_OBJ_FLAG_HIDDEN);
 
   // --- "NO CARRIER" quando il PC non trasmette ---
   overlay = lv_obj_create(scr);
@@ -325,19 +338,17 @@ static void build_ui() {
 // ----------------------------- Pagine --------------------------------------
 static void update_prompt() {
   char buf[48];
-  snprintf(buf, sizeof(buf), "root@%.12s:~$ ./sysmon%s", host, current_page ? " -g" : "");
+  static const char *flags[PAGE_COUNT] = {"", " -g", " -t"};
+  snprintf(buf, sizeof(buf), "root@%.12s:~$ ./sysmon%s", host, flags[current_page]);
   lv_label_set_text(lbl_prompt, buf);
   lv_obj_set_x(cursor, strlen(buf) * CW + 2);
 }
 
 static void show_page(int page) {
   current_page = page;
-  if (page == 0) {
-    lv_obj_remove_flag(page_values, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(page_graph, LV_OBJ_FLAG_HIDDEN);
-  } else {
-    lv_obj_add_flag(page_values, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_remove_flag(page_graph, LV_OBJ_FLAG_HIDDEN);
+  for (int i = 0; i < PAGE_COUNT; i++) {
+    if (i == page) lv_obj_remove_flag(pages[i], LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_add_flag(pages[i], LV_OBJ_FLAG_HIDDEN);
   }
   update_prompt();
 }
@@ -355,7 +366,7 @@ static void flip_screen() {
 }
 
 // Tocco o tasto BOOT:
-//   breve (al rilascio)           -> cambia pagina
+//   breve (al rilascio)           -> pagina successiva (0 -> 1 -> 2 -> 0)
 //   lungo (tenuto per 2 secondi)  -> ruota la schermata di 180 gradi
 static void poll_input() {
   static bool held = false, long_done = false;
@@ -375,7 +386,7 @@ static void poll_input() {
     }
   } else if (held && now - last_seen > RELEASE_DEBOUNCE_MS) {
     held = false;
-    if (!long_done) show_page(!current_page);
+    if (!long_done) show_page((current_page + 1) % PAGE_COUNT);
   }
 }
 
@@ -459,6 +470,25 @@ static void update_mem(AsciiBar &bar, JsonDocument &doc, const char *kused, cons
   set_bar(bar, pct, buf);
 }
 
+// Pagina top: "top": [[pid, cpu%, mem%, "nome"], ...] -> una riga per processo
+static void update_top(JsonDocument &doc) {
+  JsonArray top = doc["top"].as<JsonArray>();
+  if (top.isNull()) {
+    lv_label_set_text(lbl_top, "n/a");
+    return;
+  }
+  static char buf[TOP_ROWS * (LINE_CHARS + 1) + 1];
+  size_t len = 0;
+  int rows = 0;
+  for (JsonArray r : top) {
+    if (rows >= TOP_ROWS || r.size() < 4) break;
+    len += snprintf(buf + len, sizeof(buf) - len, "%s%5d %5.1f %5.1f %-20.20s", rows ? "\n" : "",
+                    (int)r[0].as<long>(), r[1].as<float>(), r[2].as<float>(), r[3] | "?");
+    rows++;
+  }
+  lv_label_set_text(lbl_top, rows ? buf : "n/a");
+}
+
 // "CPU" + nome (max 16 caratteri) sulla pagina valori e su quella dei grafici
 static void set_titles(Section &values, Section &graph, const char *prefix, const char *name) {
   char title[24];
@@ -494,6 +524,7 @@ static void apply_data(JsonDocument &doc) {
 
   update_mem(bar_ram, doc, "ram_used", "ram_tot");
   update_mem(bar_vram, doc, "vram_used", "vram_tot");
+  update_top(doc);
 
   fmt_rate(buf, sizeof(buf), doc["net_dn"] | 0.0f);
   lv_label_set_text(lbl_rx, buf);
@@ -509,7 +540,7 @@ static void apply_data(JsonDocument &doc) {
 }
 
 static void read_serial() {
-  static char line[768];
+  static char line[1536];  // ~800 byte con la lista "top", margine per nomi lunghi
   static size_t len = 0;
   while (Serial.available()) {
     char c = (char)Serial.read();

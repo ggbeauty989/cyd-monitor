@@ -13,12 +13,15 @@ PC (monitor.py)  ──USB seriale, JSON 1/s──►  ESP32 (LVGL 9)
    Le librerie (LVGL 9, TFT_eSPI, ArduinoJson, XPT2046_Touchscreen) vengono
    scaricate da sole e i pin di display e touch sono già configurati.
 
-Il display ha due pagine, si passa dall'una all'altra **toccando lo schermo**
+Il display ha tre pagine, si scorrono in sequenza **toccando lo schermo**
 (o premendo il tasto **BOOT**):
 
 - **valori**: temperature, carico, frequenza, potenza, RAM/VRAM, rete
 - **grafici** (`./sysmon -g`): storico degli ultimi 60 s di carico (verde)
   e temperatura (ambra) di CPU e GPU
+- **top** (`./sysmon -t`): i 14 processi che consumano più CPU, stile `htop`
+  (PID, CPU%, MEM%, nome). La CPU% è riferita all'intero sistema, come in
+  Task Manager, quindi la somma corrisponde al carico della pagina valori.
 
 **Tenendo premuto** lo schermo (o BOOT) per **2 secondi** la schermata ruota
 di 180°, utile se il CYD è montato capovolto. La scelta resta salvata anche
